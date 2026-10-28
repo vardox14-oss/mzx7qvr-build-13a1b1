@@ -38,7 +38,7 @@ struct EclipseGlow: View {
     var body: some View {
         ZStack {
             Circle()
-                .stroke(LinearGradient(colors: [Theme.accent.opacity(0.0), Theme.accent2.opacity(0.9), Theme.pumpkin.opacity(0.0)],
+                .stroke(LinearGradient(colors: [Theme.accent.opacity(0.0), Theme.accent2.opacity(0.9), Season.pumpkin.opacity(0.0)],
                                        startPoint: .leading, endPoint: .trailing), lineWidth: 2)
                 .blur(radius: 1)
             Circle()

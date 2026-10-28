@@ -25,7 +25,7 @@ struct ChatView: View {
         }
         .background(Theme.bg)
         .overlay(alignment: .top) { if let errorBanner { banner(errorBanner) } }
-        .onChange(of: pickerItem) { _, item in loadImage(item) }
+        .onChange(of: pickerItem) { item in loadImage(item) }
     }
 
     private var emptyState: some View {
@@ -70,10 +70,10 @@ struct ChatView: View {
                 }
                 .padding(.horizontal, 14).padding(.vertical, 16)
             }
-            .onChange(of: conversation.messages.last?.content) { _, _ in
+            .onChange(of: conversation.messages.last?.content) { _ in
                 withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo("bottom", anchor: .bottom) }
             }
-            .onChange(of: statusText) { _, _ in
+            .onChange(of: statusText) { _ in
                 withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
             }
         }
