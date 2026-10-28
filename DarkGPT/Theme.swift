@@ -34,3 +34,13 @@ func formatGems(_ value: Double) -> String {
     f.locale = Locale(identifier: "fr_FR")
     return f.string(from: NSNumber(value: value)) ?? "\(Int(value))"
 }
+
+enum Season {
+    /// Halloween decorations show in October (or when forced on).
+    static var forceHalloween = false
+    static var isHalloween: Bool {
+        if forceHalloween { return true }
+        return Calendar.current.component(.month, from: Date()) == 10
+    }
+    static let pumpkin = Color(red: 1.0, green: 0.46, blue: 0.09)
+}
