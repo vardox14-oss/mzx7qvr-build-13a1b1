@@ -59,16 +59,18 @@ struct ChatView: View {
     private var messageList: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: 14) {
+                LazyVStack(alignment: .leading, spacing: 22) {
                     ForEach(conversation.messages) { msg in
-                        MessageBubble(message: msg).id(msg.id)
-                    }
-                    if let statusText, streaming {
-                        StatusRow(text: statusText).id("status")
+                        let isLast = msg.id == conversation.messages.last?.id
+                        if streaming && isLast && msg.role == .assistant && msg.content.isEmpty {
+                            TypingDots(label: statusText).id(msg.id)
+                        } else {
+                            MessageBubble(message: msg, isStreaming: streaming && isLast).id(msg.id)
+                        }
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }
-                .padding(.horizontal, 14).padding(.vertical, 16)
+                .padding(.horizontal, 16).padding(.vertical, 18)
             }
             .onChange(of: conversation.messages.last?.content) { _ in
                 withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo("bottom", anchor: .bottom) }
