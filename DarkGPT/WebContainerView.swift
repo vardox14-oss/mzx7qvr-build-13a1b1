@@ -146,7 +146,7 @@ struct WebViewControllerRepresentable: UIViewControllerRepresentable {
     }
 }
 
-// MARK: - Custom WebViewController
+// MARK: - Custom WebViewController with iPhone Full-Screen Responsive Adapter
 protocol WebViewControllerDelegate: AnyObject {
     func didChangeLoading(_ loading: Bool)
     func didUpdateProgress(_ progress: Double)
@@ -184,17 +184,130 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         config.mediaTypesRequiringUserActionForPlayback = []
         config.websiteDataStore = WKWebsiteDataStore.default()
 
-        // Inject dark theme & safe-area mobile script
-        let userScriptSource = """
-        document.documentElement.style.backgroundColor = '#060608';
-        document.body.style.backgroundColor = '#060608';
-        var meta = document.querySelector('meta[name="viewport"]');
-        if (meta) {
-            meta.setAttribute('content', 'width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content');
-        }
+        // iPhone Responsive Safe-Area Injection Script
+        let mobileAdapterJS = """
+        (function() {
+          function applyIOSMobileAdapter() {
+            // 1. Force mobile viewport with viewport-fit=cover and no auto-zoom
+            var meta = document.querySelector('meta[name="viewport"]');
+            if (!meta) {
+              meta = document.createElement('meta');
+              meta.name = 'viewport';
+              document.head.appendChild(meta);
+            }
+            meta.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content');
+
+            // 2. Inject iPhone Safe-Area and Responsive CSS
+            var styleId = 'darkgpt-ios-responsive-adapter';
+            var style = document.getElementById(styleId);
+            if (!style) {
+              style = document.createElement('style');
+              style.id = styleId;
+              document.head.appendChild(style);
+            }
+
+            style.textContent = `
+              :root {
+                --sat: env(safe-area-inset-top, 47px);
+                --sab: env(safe-area-inset-bottom, 34px);
+                --sal: env(safe-area-inset-left, 0px);
+                --sar: env(safe-area-inset-right, 0px);
+              }
+
+              html, body {
+                background-color: #060608 !important;
+                overscroll-behavior-y: none !important;
+                -webkit-tap-highlight-color: transparent !important;
+                touch-action: manipulation !important;
+                height: 100% !important;
+                height: 100dvh !important;
+              }
+
+              /* 1. TOP HEADER BAR: Pad down cleanly below Notch / Dynamic Island */
+              .top {
+                height: auto !important;
+                min-height: calc(52px + var(--sat)) !important;
+                padding-top: max(var(--sat), 46px) !important;
+                padding-bottom: 8px !important;
+                padding-left: max(var(--sal), 14px) !important;
+                padding-right: max(var(--sar), 14px) !important;
+                box-sizing: border-box !important;
+                background: rgba(6, 6, 8, 0.95) !important;
+                backdrop-filter: blur(20px) !important;
+                -webkit-backdrop-filter: blur(20px) !important;
+                position: relative !important;
+                z-index: 50 !important;
+              }
+
+              /* 2. DOCK / COMPOSER: Pad up cleanly above Home Swipe Indicator */
+              .dock {
+                padding-bottom: max(var(--sab), 20px) !important;
+                padding-left: max(var(--sal), 12px) !important;
+                padding-right: max(var(--sar), 12px) !important;
+                padding-top: 6px !important;
+                box-sizing: border-box !important;
+                position: relative !important;
+                z-index: 40 !important;
+              }
+
+              .composer {
+                border-radius: 22px !important;
+                box-shadow: 0 10px 40px -10px rgba(0,0,0,0.8) !important;
+              }
+
+              /* Prevent iOS Safari from auto-zooming into inputs */
+              .composer textarea, input, textarea, select {
+                font-size: 16px !important;
+              }
+
+              /* 3. SIDEBAR (TIROIR): Safe-areas top & bottom */
+              .side {
+                padding-top: max(var(--sat), 46px) !important;
+                padding-bottom: max(var(--sab), 20px) !important;
+                padding-left: max(var(--sal), 14px) !important;
+                padding-right: 14px !important;
+                width: min(86vw, 320px) !important;
+                box-sizing: border-box !important;
+                z-index: 100 !important;
+              }
+
+              /* 4. CHAT MESSAGES SCROLL AREA */
+              .msgs {
+                padding-left: max(var(--sal), 14px) !important;
+                padding-right: max(var(--sar), 14px) !important;
+                padding-bottom: 24px !important;
+                -webkit-overflow-scrolling: touch !important;
+              }
+
+              /* 5. MODALS & POPUPS */
+              .modal, .dialog, .st {
+                max-height: calc(100dvh - var(--sat) - var(--sab) - 20px) !important;
+                margin-top: var(--sat) !important;
+                margin-bottom: var(--sab) !important;
+              }
+
+              /* 6. Buttons & clickable chips */
+              button, a, .chip, .ibtn, .snav {
+                touch-action: manipulation !important;
+              }
+            `;
+          }
+
+          window.applyIOSMobileAdapter = applyIOSMobileAdapter;
+
+          if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', applyIOSMobileAdapter);
+          } else {
+            applyIOSMobileAdapter();
+          }
+          window.addEventListener('load', applyIOSMobileAdapter);
+        })();
         """
-        let script = WKUserScript(source: userScriptSource, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
-        config.userContentController.addUserScript(script)
+
+        let startScript = WKUserScript(source: mobileAdapterJS, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+        let endScript = WKUserScript(source: mobileAdapterJS, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
+        config.userContentController.addUserScript(startScript)
+        config.userContentController.addUserScript(endScript)
 
         webView = WKWebView(frame: view.bounds, configuration: config)
         webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -246,6 +359,9 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         delegate?.didChangeLoading(false)
         refreshControl.endRefreshing()
+
+        // Re-execute adapter once page finishes loading
+        webView.evaluateJavaScript("if (window.applyIOSMobileAdapter) { window.applyIOSMobileAdapter(); }", completionHandler: nil)
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
@@ -264,7 +380,7 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
             return
         }
 
-        // Si le lien pointe vers un domaine externe (ex: Discord, Stripe, etc.), ouvrir dans Safari
+        // External links opened in Safari
         let host = url.host?.lowercased() ?? ""
         if !host.isEmpty && !host.contains("darkgpt.chat") && !host.contains("challenges.cloudflare.com") {
             UIApplication.shared.open(url)
@@ -275,7 +391,7 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         decisionHandler(.allow)
     }
 
-    // MARK: - WKUIDelegate (Native JS Alert/Confirm/Prompt + Popup Support)
+    // MARK: - WKUIDelegate (Native JS Dialogs & Popups)
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         if navigationAction.targetFrame == nil {
             webView.load(navigationAction.request)
