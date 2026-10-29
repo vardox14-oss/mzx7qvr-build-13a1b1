@@ -17,49 +17,83 @@ struct ChatView: View {
     @FocusState private var inputFocused: Bool
 
     private var model: AIModel? { app.selectedModel() }
+    private var isEmpty: Bool { conversation.messages.isEmpty }
 
     var body: some View {
         VStack(spacing: 0) {
-            if conversation.messages.isEmpty { emptyState } else { messageList }
-            composer
+            if isEmpty { emptyState } else { messageList }
+            if isEmpty { suggestions }
+            Composer(input: $input, webSearch: $webSearch, thinking: $thinking,
+                     attachedImage: $attachedImage, pickerItem: $pickerItem,
+                     streaming: streaming, showThinking: model?.hasThinkingToggle == true,
+                     focused: $inputFocused, onSend: send, onStop: stopStreaming)
+                .padding(.horizontal, 12)
+            Text("DarkGPT peut se tromper. Vérifie les informations importantes.")
+                .font(.system(size: 10)).foregroundStyle(Theme.faint)
+                .padding(.top, 6).padding(.bottom, 4)
         }
-        .background(Theme.bg)
+        .background(Theme.bg.ignoresSafeArea())
         .overlay(alignment: .top) { if let errorBanner { banner(errorBanner) } }
         .onChange(of: pickerItem) { item in loadImage(item) }
     }
 
-    private var emptyState: some View {
-        VStack(spacing: 16) {
-            Spacer()
-            Image("Logo").resizable().scaledToFit().frame(width: 64, height: 64)
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous)).opacity(0.9)
-            Text("Pose ta question").font(.title3.weight(.semibold))
-            Text("Réponses directes, sans filtre inutile.").font(.subheadline).foregroundStyle(Theme.muted)
-            suggestionChips
-            Spacer(); Spacer()
-        }
-        .frame(maxWidth: .infinity)
-        .padding()
+    private var greeting: String {
+        let h = Calendar.current.component(.hour, from: Date())
+        let hello = (h >= 18 || h < 5) ? "Bonsoir" : "Bonjour"
+        let first = app.user?.name.split(separator: " ").first.map(String.init) ?? ""
+        return first.isEmpty ? hello : "\(hello), \(first)"
     }
 
-    private var suggestionChips: some View {
-        VStack(spacing: 10) {
-            ForEach(["Explique-moi un concept simplement", "Aide-moi à coder une fonction", "Donne-moi un avis cash"], id: \.self) { s in
-                Button { input = s; inputFocused = true } label: {
-                    Text(s).font(.footnote).foregroundStyle(.white.opacity(0.85))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 14).padding(.vertical, 11)
-                        .cardStyle(radius: 12)
+    private var emptyState: some View {
+        VStack(spacing: 14) {
+            Spacer()
+            Image("Logo").resizable().scaledToFit().frame(width: 52, height: 52)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .shadow(color: Theme.accent.opacity(0.35), radius: 16)
+            Text(greeting)
+                .font(.system(size: 30, weight: .semibold, design: .serif))
+                .foregroundStyle(.white)
+            Text("Comment je peux t'aider ?")
+                .font(.system(size: 17)).foregroundStyle(Theme.muted)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+        .onTapGesture { inputFocused = false }
+    }
+
+    private var suggestions: some View {
+        let items: [Suggestion] = [
+            Suggestion(icon: "lightbulb", title: "Explique-moi", sub: "un concept simplement"),
+            Suggestion(icon: "chevron.left.forwardslash.chevron.right", title: "Aide-moi à coder", sub: "une fonction en Python"),
+            Suggestion(icon: "pencil.line", title: "Rédige", sub: "un message pro"),
+            Suggestion(icon: "chart.line.uptrend.xyaxis", title: "Analyse", sub: "une idée de business")
+        ]
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(items) { item in
+                    Button { input = item.title + " " + item.sub; inputFocused = true } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Image(systemName: item.icon).font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.accent2)
+                            Text(item.title).font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                            Text(item.sub).font(.caption).foregroundStyle(Theme.muted)
+                        }
+                        .frame(width: 150, alignment: .leading)
+                        .padding(12)
+                        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Theme.stroke, lineWidth: 1))
+                    }
                 }
             }
+            .padding(.horizontal, 12)
         }
-        .padding(.top, 8).padding(.horizontal, 24)
+        .padding(.bottom, 10)
     }
 
     private var messageList: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 22) {
+                LazyVStack(alignment: .leading, spacing: 24) {
                     ForEach(conversation.messages) { msg in
                         let isLast = msg.id == conversation.messages.last?.id
                         if streaming && isLast && msg.role == .assistant && msg.content.isEmpty {
@@ -70,103 +104,35 @@ struct ChatView: View {
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }
-                .padding(.horizontal, 16).padding(.vertical, 18)
+                .padding(.horizontal, 18).padding(.vertical, 18)
             }
+            .scrollDismissesKeyboard(.interactively)
             .onChange(of: conversation.messages.last?.content) { _ in
-                withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo("bottom", anchor: .bottom) }
+                proxy.scrollTo("bottom", anchor: .bottom)
             }
-            .onChange(of: statusText) { _ in
-                withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
+            .onChange(of: conversation.messages.count) { _ in
+                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("bottom", anchor: .bottom) }
             }
+            .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
         }
     }
 
     private func banner(_ text: String) -> some View {
-        Text(text).font(.footnote.weight(.medium)).foregroundStyle(.white)
-            .padding(.horizontal, 14).padding(.vertical, 10)
-            .background(Theme.accent.opacity(0.92), in: Capsule())
-            .padding(.top, 8)
-            .transition(.move(edge: .top).combined(with: .opacity))
-            .onTapGesture { errorBanner = nil }
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.circle.fill")
+            Text(text).font(.footnote.weight(.medium)).lineLimit(3)
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .background(Theme.accent.opacity(0.95), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .padding(.horizontal, 16).padding(.top, 8)
+        .transition(.move(edge: .top).combined(with: .opacity))
+        .onTapGesture { withAnimation { errorBanner = nil } }
     }
 }
 
-// MARK: - Composer
+// MARK: - Send / stream
 extension ChatView {
-    private var composer: some View {
-        VStack(spacing: 8) {
-            if let attachedImage, let ui = UIImage(data: attachedImage) {
-                HStack {
-                    Image(uiImage: ui).resizable().scaledToFill().frame(width: 48, height: 48)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                    Text("Image jointe").font(.footnote).foregroundStyle(Theme.muted)
-                    Spacer()
-                    Button { self.attachedImage = nil } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.faint) }
-                }
-                .padding(.horizontal, 14)
-            }
-
-            HStack(spacing: 8) {
-                toggleChip(icon: "globe", label: "Web", on: $webSearch)
-                if model?.hasThinkingToggle == true {
-                    toggleChip(icon: "brain", label: "Réflexion", on: $thinking)
-                }
-                Spacer()
-            }
-            .padding(.horizontal, 14)
-
-            HStack(alignment: .bottom, spacing: 10) {
-                PhotosPicker(selection: $pickerItem, matching: .images) {
-                    Image(systemName: "photo.on.rectangle").font(.title3).foregroundStyle(Theme.muted)
-                        .frame(width: 38, height: 38)
-                }
-
-                TextField("", text: $input, prompt: Text("Écris à DarkGPT…").foregroundColor(Theme.faint), axis: .vertical)
-                    .focused($inputFocused)
-                    .lineLimit(1...6)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14).padding(.vertical, 10)
-                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Theme.stroke, lineWidth: 1))
-
-                sendButton
-            }
-            .padding(.horizontal, 12).padding(.bottom, 8).padding(.top, 2)
-        }
-        .background(Theme.bg)
-        .overlay(Rectangle().fill(Theme.stroke).frame(height: 1), alignment: .top)
-    }
-
-    private var sendButton: some View {
-        Button {
-            Haptics.tap()
-            if streaming { stopStreaming() } else { send() }
-        } label: {
-            Image(systemName: streaming ? "stop.fill" : "arrow.up")
-                .font(.headline.weight(.bold)).foregroundStyle(.white)
-                .frame(width: 38, height: 38)
-                .background(canSend || streaming ? AnyShapeStyle(Theme.gradient) : AnyShapeStyle(Theme.surface2), in: Circle())
-        }
-        .disabled(!canSend && !streaming)
-    }
-
-    private var canSend: Bool {
-        !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || attachedImage != nil
-    }
-
-    private func toggleChip(icon: String, label: String, on: Binding<Bool>) -> some View {
-        Button { Haptics.tap(); on.wrappedValue.toggle() } label: {
-            HStack(spacing: 5) {
-                Image(systemName: icon).font(.caption2)
-                Text(label).font(.caption.weight(.medium))
-            }
-            .foregroundStyle(on.wrappedValue ? .white : Theme.muted)
-            .padding(.horizontal, 11).padding(.vertical, 6)
-            .background(on.wrappedValue ? AnyShapeStyle(Theme.accent.opacity(0.9)) : AnyShapeStyle(Theme.surface), in: Capsule())
-            .overlay(Capsule().stroke(Theme.stroke, lineWidth: on.wrappedValue ? 0 : 1))
-        }
-    }
-
     private func loadImage(_ item: PhotosPickerItem?) {
         guard let item else { return }
         Task {
@@ -175,13 +141,10 @@ extension ChatView {
             }
         }
     }
-}
 
-// MARK: - Send / stream
-extension ChatView {
     private func send() {
         let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard canSend, let model, !streaming else { return }
+        guard (!text.isEmpty || attachedImage != nil), let model, !streaming else { return }
 
         if !model.isUnlocked(for: app.plan) {
             showBanner("Ce modèle nécessite l'offre \(Plans.label(model.minPlan)).")
@@ -189,32 +152,29 @@ extension ChatView {
         }
 
         var image: (base64: String, mediaType: String)?
-        var imageData: Data?
-        if let data = attachedImage {
-            image = (data.base64EncodedString(), "image/jpeg")
-            imageData = data
-        }
+        let imageData = attachedImage
+        if let data = imageData { image = (data.base64EncodedString(), "image/jpeg") }
 
-        let userMessage = ChatMessage(role: .user, content: text, image: imageData)
-        conversation.messages.append(userMessage)
-        if conversation.title == "Nouvelle conversation" && !text.isEmpty {
-            conversation.title = String(text.prefix(48))
+        let prompt = text.isEmpty ? "Analyse cette image." : text
+        conversation.messages.append(ChatMessage(role: .user, content: text, image: imageData))
+        if conversation.title == "Nouvelle conversation" {
+            conversation.title = String((text.isEmpty ? "Image" : text).prefix(48))
         }
         conversation.model = model.slug
         conversation.updated = Date()
 
-        let history = Array(conversation.messages.dropLast())
+        let history = Array(conversation.messages.dropLast().suffix(30))
         input = ""; attachedImage = nil; pickerItem = nil
         inputFocused = false
 
         var assistant = ChatMessage(role: .assistant, content: "", model: model.slug)
         conversation.messages.append(assistant)
         streaming = true
-        statusText = "Connexion…"
+        statusText = nil
 
         streamTask = Task {
             let stream = APIClient.shared.streamChat(
-                message: text, history: history, modelSlug: model.slug,
+                message: prompt, history: history, modelSlug: model.slug,
                 conversationId: conversation.id, webSearch: webSearch, thinking: thinking, image: image)
             do {
                 for try await event in stream {
@@ -229,29 +189,36 @@ extension ChatView {
                         if let content, !content.isEmpty { assistant.content = content }
                         updateAssistant(assistant)
                         app.setGems(gems)
+                        Haptics.success()
                         finishStreaming()
                         return
                     case .failed(let message, let gems):
                         app.setGems(gems)
-                        failAssistant(message, &assistant)
+                        fail(message, &assistant)
                         return
                     }
                 }
-                // stream ended without explicit done
-                if assistant.content.isEmpty { failAssistant("Réponse vide. Réessaie.", &assistant) }
-                else { updateAssistant(assistant); finishStreaming() }
+                if assistant.content.isEmpty {
+                    if Task.isCancelled { removeEmptyAssistant(assistant); finishStreaming() }
+                    else { fail("Réponse vide. Réessaie.", &assistant) }
+                } else { updateAssistant(assistant); finishStreaming() }
             } catch let error as APIError {
                 if case .unauthorized = error { await app.logout() }
-                else { failAssistant(error.localizedDescription, &assistant) }
+                else { fail(error.localizedDescription, &assistant) }
             } catch {
-                if !Task.isCancelled { failAssistant("Connexion interrompue.", &assistant) }
-                else { finishStreaming() }
+                if Task.isCancelled {
+                    if assistant.content.isEmpty { removeEmptyAssistant(assistant) }
+                    finishStreaming()
+                } else { fail("Connexion interrompue.", &assistant) }
             }
         }
     }
 
     private func stopStreaming() {
         streamTask?.cancel()
+        if let last = conversation.messages.last, last.role == .assistant, last.content.isEmpty {
+            removeEmptyAssistant(last)
+        }
         finishStreaming()
     }
 
@@ -261,9 +228,13 @@ extension ChatView {
         }
     }
 
-    private func failAssistant(_ text: String, _ assistant: inout ChatMessage) {
+    private func removeEmptyAssistant(_ message: ChatMessage) {
+        conversation.messages.removeAll { $0.id == message.id && $0.content.isEmpty }
+    }
+
+    private func fail(_ text: String, _ assistant: inout ChatMessage) {
         assistant.isError = true
-        assistant.content = assistant.content.isEmpty ? text : assistant.content
+        if assistant.content.isEmpty { assistant.content = text }
         updateAssistant(assistant)
         showBanner(text)
         Haptics.error()
@@ -274,11 +245,18 @@ extension ChatView {
         streaming = false
         statusText = nil
         conversation.updated = Date()
-        app.upsert(conversation)
+        if !conversation.messages.isEmpty { app.upsert(conversation) }
     }
 
     private func showBanner(_ text: String) {
         withAnimation { errorBanner = text }
-        Task { try? await Task.sleep(nanoseconds: 3_500_000_000); withAnimation { errorBanner = nil } }
+        Task { try? await Task.sleep(nanoseconds: 4_000_000_000); withAnimation { errorBanner = nil } }
     }
+}
+
+struct Suggestion: Identifiable {
+    let icon: String
+    let title: String
+    let sub: String
+    var id: String { title }
 }
