@@ -183,11 +183,17 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
         config.websiteDataStore = WKWebsiteDataStore.default()
+        config.preferences.javaScriptCanOpenWindowsAutomatically = true
+        config.defaultWebpagePreferences.allowsContentJavaScript = true
 
         // iPhone Responsive Safe-Area Injection Script
         let mobileAdapterJS = """
         (function() {
           function applyIOSMobileAdapter() {
+            if (!window.location.hostname || !window.location.hostname.includes('darkgpt.chat')) {
+              return;
+            }
+
             // 1. Force mobile viewport with viewport-fit=cover and no auto-zoom
             var meta = document.querySelector('meta[name="viewport"]');
             if (!meta) {
@@ -310,6 +316,8 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         config.userContentController.addUserScript(endScript)
 
         webView = WKWebView(frame: view.bounds, configuration: config)
+        // Standard Mobile Safari User-Agent to prevent Google OAuth 403: disallowed_useragent
+        webView.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
         webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         webView.navigationDelegate = self
         webView.uiDelegate = self
@@ -351,6 +359,27 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         loadInitialPage()
     }
 
+    // MARK: - Internal OAuth & Site Domain Whitelist
+    private func isAllowedInternalDomain(_ host: String) -> Bool {
+        let allowedDomains = [
+            "darkgpt.chat",
+            "cloudflare.com",
+            "challenges.cloudflare.com",
+            "google.com",
+            "google.fr",
+            "gstatic.com",
+            "googleapis.com",
+            "googleusercontent.com",
+            "discord.com",
+            "discordapp.com",
+            "apple.com",
+            "appleid.apple.com"
+        ]
+        return allowedDomains.contains { domain in
+            host == domain || host.hasSuffix("." + domain)
+        }
+    }
+
     // MARK: - WKNavigationDelegate
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         delegate?.didChangeLoading(true)
@@ -380,21 +409,35 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
             return
         }
 
-        // External links opened in Safari
-        let host = url.host?.lowercased() ?? ""
-        if !host.isEmpty && !host.contains("darkgpt.chat") && !host.contains("challenges.cloudflare.com") {
+        // Handle native system schemes (e.g. mailto:, tel:)
+        let scheme = url.scheme?.lowercased() ?? ""
+        if scheme == "mailto" || scheme == "tel" {
             UIApplication.shared.open(url)
             decisionHandler(.cancel)
             return
         }
 
-        decisionHandler(.allow)
+        // Allow internal app pages, Turnstile challenges, and OAuth login providers
+        let host = url.host?.lowercased() ?? ""
+        if host.isEmpty || isAllowedInternalDomain(host) {
+            decisionHandler(.allow)
+            return
+        }
+
+        // External URLs (e.g. social networks, external documentation) open in Safari
+        UIApplication.shared.open(url)
+        decisionHandler(.cancel)
     }
 
     // MARK: - WKUIDelegate (Native JS Dialogs & Popups)
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        if navigationAction.targetFrame == nil {
-            webView.load(navigationAction.request)
+        if let url = navigationAction.request.url, !url.absoluteString.isEmpty {
+            let host = url.host?.lowercased() ?? ""
+            if host.isEmpty || isAllowedInternalDomain(host) {
+                webView.load(navigationAction.request)
+            } else {
+                UIApplication.shared.open(url)
+            }
         }
         return nil
     }
