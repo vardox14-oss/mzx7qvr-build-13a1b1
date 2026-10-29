@@ -87,29 +87,35 @@ struct HomeView: View {
         ToolbarItem(placement: .topBarLeading) {
             Button { openSidebar() } label: {
                 Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 17, weight: .medium))
+                    .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(.white)
+                    .frame(width: 34, height: 34)
+                    .background(Color.white.opacity(0.06), in: Circle())
             }
         }
 
         ToolbarItem(placement: .principal) {
             Button { Haptics.tap(); showModels = true } label: {
-                HStack(spacing: 5) {
+                HStack(spacing: 6) {
                     Text(app.selectedModel()?.name ?? "DarkGPT")
-                        .font(.system(size: 16, weight: .semibold)).lineLimit(1)
-                    Image(systemName: "chevron.down").font(.system(size: 11, weight: .bold)).foregroundStyle(Theme.muted)
+                        .font(.system(size: 14.5, weight: .semibold)).lineLimit(1)
+                    Image(systemName: "chevron.down").font(.system(size: 10, weight: .bold)).foregroundStyle(Theme.muted)
                 }
                 .foregroundStyle(.white)
-                .frame(maxWidth: 200)
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(Color.white.opacity(0.06), in: Capsule())
+                .overlay(Capsule().stroke(Color.white.opacity(0.08), lineWidth: 1))
             }
         }
 
         ToolbarItem(placement: .topBarTrailing) {
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 Button { Haptics.tap(); newChat() } label: {
                     Image(systemName: "square.and.pencil")
-                        .font(.system(size: 17, weight: .medium))
+                        .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(.white)
+                        .frame(width: 34, height: 34)
+                        .background(Color.white.opacity(0.06), in: Circle())
                 }
 
                 Menu {
@@ -146,9 +152,10 @@ struct HomeView: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(Theme.muted)
-                        .frame(width: 32, height: 32)
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(Color.white.opacity(0.8))
+                        .frame(width: 34, height: 34)
+                        .background(Color.white.opacity(0.06), in: Circle())
                 }
             }
         }

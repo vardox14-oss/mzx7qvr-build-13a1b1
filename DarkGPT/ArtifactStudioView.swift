@@ -15,50 +15,50 @@ struct ArtifactCardView: View {
             HStack(spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Theme.accent.opacity(0.18))
-                        .frame(width: 44, height: 44)
+                        .fill(Color(red: 0.15, green: 0.15, blue: 0.17))
+                        .frame(width: 42, height: 42)
                     Image(systemName: artifact.type.icon)
-                        .font(.system(size: 20, weight: .semibold))
+                        .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(Theme.accent2)
                 }
 
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
                         Text(artifact.title)
-                            .font(.subheadline.weight(.semibold))
+                            .font(.system(size: 14.5, weight: .semibold))
                             .foregroundStyle(.white)
                             .lineLimit(1)
                         if artifact.version > 1 {
                             Text("v\(artifact.version)")
-                                .font(.caption2.weight(.bold))
+                                .font(.system(size: 10, weight: .bold))
                                 .padding(.horizontal, 5).padding(.vertical, 1)
-                                .background(Theme.surface2, in: Capsule())
+                                .background(Color.white.opacity(0.08), in: Capsule())
                                 .foregroundStyle(Theme.muted)
                         }
                     }
                     Text(artifact.type.label)
-                        .font(.caption)
+                        .font(.system(size: 12))
                         .foregroundStyle(Theme.muted)
                 }
 
                 Spacer()
 
-                HStack(spacing: 6) {
+                HStack(spacing: 5) {
                     if artifact.isPreviewable {
                         Text("Aperçu")
-                            .font(.caption2.weight(.bold))
-                            .padding(.horizontal, 7).padding(.vertical, 3)
-                            .background(Theme.accent.opacity(0.25), in: Capsule())
+                            .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(Theme.accent2)
                     }
                     Image(systemName: "arrow.up.right")
-                        .font(.system(size: 13, weight: .bold))
+                        .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(Theme.faint)
                 }
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(Color.white.opacity(0.06), in: Capsule())
             }
             .padding(12)
-            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Theme.stroke, lineWidth: 1))
+            .background(Color(red: 0.10, green: 0.10, blue: 0.11), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
         }
         .buttonStyle(.plain)
     }

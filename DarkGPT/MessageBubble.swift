@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 
+/// Refined chat bubble layout matching ChatGPT and Claude iOS standards.
 struct MessageBubble: View {
     let message: ChatMessage
     var isStreaming = false
@@ -22,7 +23,6 @@ struct MessageBubble: View {
                 let mainText = String(text[closeRange.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
                 return (thinkText, mainText)
             } else {
-                // En cours de streaming dans le bloc <think>
                 let startRange = text.range(of: "<think>")!
                 let thinkText = String(text[startRange.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
                 return (thinkText, "")
@@ -44,22 +44,29 @@ struct MessageBubble: View {
         }
     }
 
-    // MARK: - User Row
+    // MARK: - User Row (ChatGPT / iMessage luxury pill style)
     private var userRow: some View {
-        HStack(alignment: .top) {
-            Spacer(minLength: 44)
+        HStack(alignment: .bottom, spacing: 0) {
+            Spacer(minLength: 48)
+
             VStack(alignment: .trailing, spacing: 6) {
                 if let data = message.image, let ui = UIImage(data: data) {
                     Image(uiImage: ui).resizable().scaledToFill()
                         .frame(maxWidth: 240, maxHeight: 240).clipped()
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
                 }
+
                 if !message.content.isEmpty {
                     Text(message.content)
+                        .font(.system(size: 16, weight: .regular))
+                        .lineSpacing(4)
                         .foregroundStyle(.white)
                         .textSelection(.enabled)
                         .padding(.horizontal, 16).padding(.vertical, 12)
-                        .background(Theme.surface2, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                        .background(Theme.surface2, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.white.opacity(0.06), lineWidth: 1))
+                        .shadow(color: Color.black.opacity(0.18), radius: 6, y: 3)
                 }
 
                 if let onEdit {
@@ -71,7 +78,7 @@ struct MessageBubble: View {
                             Image(systemName: "pencil")
                             Text("Modifier")
                         }
-                        .font(.caption2)
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(Theme.faint)
                         .padding(.trailing, 4)
                     }
@@ -80,32 +87,29 @@ struct MessageBubble: View {
         }
     }
 
-    // MARK: - Assistant Row
+    // MARK: - Assistant Row (Clean editorial layout, no repeated header)
     private var assistantRow: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Header
-            HStack(spacing: 8) {
-                Image("Logo").resizable().scaledToFit().frame(width: 22, height: 22)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                Text(message.model ?? "DarkGPT")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Theme.muted)
-                Spacer()
-            }
-
-            // Error state
+            // Error State
             if message.isError {
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.accent2).font(.footnote)
-                    Text(message.content).foregroundStyle(Theme.accent2)
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Theme.accent2)
+                        .font(.system(size: 15))
+                    Text(message.content)
+                        .font(.system(size: 15))
+                        .foregroundStyle(Theme.accent2)
                 }
+                .padding(12)
+                .background(Theme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Theme.accent.opacity(0.3), lineWidth: 1))
             } else {
-                // Thinking Process (Raisonnement R1 / o1 / Claude)
+                // Thinking disclosure
                 if let think = parsedContent.thinking, !think.isEmpty {
-                    thinkingDisclosure(think)
+                    thinkingBox(think)
                 }
 
-                // Interactive Artifacts Cards
+                // Artifacts cards (if any generated)
                 if !artifacts.isEmpty {
                     VStack(spacing: 8) {
                         ForEach(artifacts) { art in
@@ -114,28 +118,27 @@ struct MessageBubble: View {
                             }
                         }
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 2)
                 }
 
-                // Main Markdown content
+                // Main Markdown response
                 if !parsedContent.main.isEmpty {
                     MarkdownText(parsedContent.main)
                         .textSelection(.enabled)
-                        .foregroundStyle(.white)
                 } else if isStreaming && parsedContent.thinking != nil {
-                    HStack(spacing: 6) {
+                    HStack(spacing: 8) {
                         ProgressView().tint(Theme.muted).scaleEffect(0.8)
                         Text("Raisonnement en cours…")
-                            .font(.subheadline)
+                            .font(.system(size: 14))
                             .foregroundStyle(Theme.muted)
                     }
-                    .padding(.top, 4)
+                    .padding(.top, 2)
                 }
             }
 
-            // Bottom Action Bar (Copy, TTS Speak, Regenerate, Share)
+            // Discreet Action Bar (Copy, TTS, Regenerate, Share)
             if !isStreaming && !message.isError && !message.content.isEmpty {
-                actionBar
+                actionRow
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -144,49 +147,57 @@ struct MessageBubble: View {
         }
     }
 
-    private func thinkingDisclosure(_ text: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+    // MARK: - Thinking Box (DeepSeek R1 / Claude 3.7 style)
+    private func thinkingBox(_ text: String) -> some View {
+        let linesCount = text.components(separatedBy: "\n").count
+        return VStack(alignment: .leading, spacing: 6) {
             Button {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
                     isThinkingExpanded.toggle()
                 }
             } label: {
-                HStack(spacing: 6) {
+                HStack(spacing: 7) {
                     Image(systemName: "brain.head.profile")
-                        .font(.caption.weight(.semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Theme.accent2)
-                    Text(isStreaming && parsedContent.main.isEmpty ? "Raisonnement en cours…" : "Processus de réflexion")
-                        .font(.caption.weight(.medium))
+
+                    Text(isStreaming && parsedContent.main.isEmpty ? "Raisonnement en cours…" : "Raisonnement (\(linesCount) étapes)")
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Theme.muted)
+
                     Spacer()
+
                     Image(systemName: isThinkingExpanded ? "chevron.up" : "chevron.down")
-                        .font(.caption2.weight(.bold))
+                        .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(Theme.faint)
                 }
-                .padding(.horizontal, 12).padding(.vertical, 8)
-                .background(Theme.surface2.opacity(0.8), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .padding(.horizontal, 11).padding(.vertical, 7)
+                .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Theme.stroke, lineWidth: 1))
             }
 
             if isThinkingExpanded {
                 ScrollView {
                     Text(text)
                         .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(Theme.muted)
-                        .lineSpacing(3)
+                        .foregroundStyle(Color.white.opacity(0.65))
+                        .lineSpacing(3.5)
                         .padding(10)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .frame(maxHeight: 180)
-                .background(Color.black.opacity(0.3), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(Color.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Theme.stroke, lineWidth: 1))
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
     }
 
-    private var actionBar: some View {
-        HStack(spacing: 16) {
+    // MARK: - Action Row
+    private var actionRow: some View {
+        HStack(spacing: 8) {
             // Copy
-            Button {
+            actionButton(icon: copied ? "checkmark" : "doc.on.doc", highlight: copied) {
                 UIPasteboard.general.string = parsedContent.main.isEmpty ? message.content : parsedContent.main
                 withAnimation { copied = true }
                 Haptics.tap()
@@ -194,61 +205,46 @@ struct MessageBubble: View {
                     try? await Task.sleep(nanoseconds: 1_500_000_000)
                     withAnimation { copied = false }
                 }
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                    Text(copied ? "Copié" : "Copier")
-                }
-                .font(.caption2)
-                .foregroundStyle(copied ? .green : Theme.faint)
             }
 
             // Speak / TTS
             let isCurrentSpeaking = speech.isSpeaking && speech.speakingMessageId == message.id
-            Button {
+            actionButton(icon: isCurrentSpeaking ? "stop.fill" : "speaker.wave.2", highlight: isCurrentSpeaking) {
                 Haptics.tap()
                 speech.speak(text: parsedContent.main.isEmpty ? message.content : parsedContent.main, messageId: message.id)
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: isCurrentSpeaking ? "stop.fill" : "speaker.wave.2")
-                    Text(isCurrentSpeaking ? "Arrêter" : "Écouter")
-                }
-                .font(.caption2)
-                .foregroundStyle(isCurrentSpeaking ? Theme.accent2 : Theme.faint)
             }
 
             // Regenerate
             if let onRegenerate {
-                Button {
+                actionButton(icon: "arrow.clockwise") {
                     Haptics.tap()
                     onRegenerate()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "arrow.clockwise")
-                        Text("Régénérer")
-                    }
-                    .font(.caption2)
-                    .foregroundStyle(Theme.faint)
                 }
             }
 
             // Share
-            Button {
+            actionButton(icon: "square.and.arrow.up") {
                 Haptics.tap()
                 showShareSheet = true
-            } label: {
-                Image(systemName: "square.and.arrow.up")
-                    .font(.caption2)
-                    .foregroundStyle(Theme.faint)
             }
 
             Spacer()
         }
         .padding(.top, 4)
     }
+
+    private func actionButton(icon: String, highlight: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(highlight ? Theme.accent2 : Theme.muted)
+                .frame(width: 30, height: 30)
+                .background(highlight ? Theme.accent.opacity(0.15) : Color.white.opacity(0.03), in: Circle())
+        }
+    }
 }
 
-/// Three bouncing dots while the assistant is thinking (ChatGPT style).
+/// Minimalist elegant pulsing dots while generating (ChatGPT style).
 struct TypingDots: View {
     let label: String?
     @State private var phase = 0
@@ -256,19 +252,29 @@ struct TypingDots: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image("Logo").resizable().scaledToFit().frame(width: 22, height: 22)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-            HStack(spacing: 4) {
+            HStack(spacing: 5) {
                 ForEach(0..<3) { i in
-                    Circle().fill(Theme.muted)
+                    Circle()
+                        .fill(Theme.muted)
                         .frame(width: 6, height: 6)
-                        .opacity(phase == i ? 1 : 0.3)
-                        .scaleEffect(phase == i ? 1.15 : 0.9)
+                        .opacity(phase == i ? 1.0 : 0.3)
+                        .scaleEffect(phase == i ? 1.2 : 0.85)
                 }
             }
-            if let label { Text(label).font(.caption).foregroundStyle(Theme.faint) }
+            .padding(.horizontal, 10).padding(.vertical, 8)
+            .background(Color.white.opacity(0.04), in: Capsule())
+
+            if let label {
+                Text(label)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.faint)
+            }
             Spacer()
         }
-        .onReceive(timer) { _ in phase = (phase + 1) % 3 }
+        .onReceive(timer) { _ in
+            withAnimation(.easeInOut(duration: 0.25)) {
+                phase = (phase + 1) % 3
+            }
+        }
     }
 }

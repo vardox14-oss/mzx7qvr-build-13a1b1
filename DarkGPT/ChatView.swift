@@ -121,16 +121,25 @@ struct ChatView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 16) {
             Spacer()
-            Image("Logo").resizable().scaledToFit().frame(width: 52, height: 52)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .shadow(color: Theme.accent.opacity(0.35), radius: 16)
-            Text(greeting)
-                .font(.system(size: 30, weight: .semibold, design: .serif))
-                .foregroundStyle(.white)
-            Text(project != nil ? "Projet « \(project!.name) » actif" : "Comment je peux t'aider ?")
-                .font(.system(size: 17)).foregroundStyle(Theme.muted)
+            ZStack {
+                Circle()
+                    .fill(Theme.accent.opacity(0.12))
+                    .frame(width: 80, height: 80)
+                    .blur(radius: 20)
+                Image("Logo").resizable().scaledToFit().frame(width: 52, height: 52)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .shadow(color: Color.black.opacity(0.4), radius: 10)
+            }
+            VStack(spacing: 6) {
+                Text(greeting)
+                    .font(.system(size: 26, weight: .bold))
+                    .foregroundStyle(.white)
+                Text(project != nil ? "Projet « \(project!.name) » actif" : "Que souhaites-tu explorer ou créer aujourd'hui ?")
+                    .font(.system(size: 15))
+                    .foregroundStyle(Theme.muted)
+            }
             Spacer()
         }
         .frame(maxWidth: .infinity)
@@ -140,33 +149,40 @@ struct ChatView: View {
 
     private var suggestions: some View {
         let items: [Suggestion] = [
-            Suggestion(icon: "laptopcomputer", title: "Créer une app web", sub: "Calculatrice HTML/JS en Artefact"),
-            Suggestion(icon: "sparkles", title: "Générer un SVG", sub: "Logo moderne ou illustration vectorielle"),
-            Suggestion(icon: "chevron.left.forwardslash.chevron.right", title: "Coder un script", sub: "Une classe Swift ou Python"),
-            Suggestion(icon: "lightbulb", title: "Explique-moi", sub: "Un concept complexe simplement")
+            Suggestion(icon: "laptopcomputer", title: "App Web", sub: "Calculatrice HTML interactive"),
+            Suggestion(icon: "sparkles", title: "Image SVG", sub: "Illustration vectorielle"),
+            Suggestion(icon: "curlybraces", title: "Script Python", sub: "Automatisation ou algorithme"),
+            Suggestion(icon: "lightbulb", title: "Analyse", sub: "Synthèse d'un sujet complexe")
         ]
-        return ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                ForEach(items) { item in
-                    Button {
-                        input = item.title + " : " + item.sub
-                        inputFocused = true
-                    } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Image(systemName: item.icon).font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.accent2)
-                            Text(item.title).font(.subheadline.weight(.semibold)).foregroundStyle(.white)
-                            Text(item.sub).font(.caption).foregroundStyle(Theme.muted)
+        return LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+            ForEach(items) { item in
+                Button {
+                    Haptics.tap()
+                    input = item.title + " : " + item.sub
+                    inputFocused = true
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: item.icon)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Theme.accent2)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.title)
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(.white)
+                            Text(item.sub)
+                                .font(.system(size: 11))
+                                .foregroundStyle(Theme.muted)
+                                .lineLimit(1)
                         }
-                        .frame(width: 155, alignment: .leading)
-                        .padding(12)
-                        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Theme.stroke, lineWidth: 1))
+                        Spacer(minLength: 0)
                     }
+                    .padding(.horizontal, 12).padding(.vertical, 10)
+                    .background(Color(red: 0.11, green: 0.11, blue: 0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.white.opacity(0.06), lineWidth: 1))
                 }
             }
-            .padding(.horizontal, 12)
         }
-        .padding(.bottom, 10)
+        .padding(.horizontal, 14).padding(.bottom, 8)
     }
 
     private var messageList: some View {

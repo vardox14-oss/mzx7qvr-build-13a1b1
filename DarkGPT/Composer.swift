@@ -2,7 +2,7 @@ import SwiftUI
 import PhotosUI
 import UniformTypeIdentifiers
 
-/// Large rounded input card with media attachments, file attachments, speech dictation, and tools.
+/// Ultra-refined, compact input capsule matching ChatGPT iOS standards.
 struct Composer: View {
     @Binding var input: String
     @Binding var webSearch: Bool
@@ -20,120 +20,161 @@ struct Composer: View {
     @State private var showFilePicker = false
     @State private var showPhotosPicker = false
 
-    private var canSend: Bool {
+    private var hasContent: Bool {
         !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || attachedImage != nil || attachedDocument != nil
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Attachments Preview row
-            if attachedImage != nil || attachedDocument != nil {
-                attachmentsBar
+        VStack(spacing: 8) {
+            // Active tools / attachments row (only shows when something is attached or active)
+            if attachedImage != nil || attachedDocument != nil || webSearch || thinking {
+                activePillsRow
             }
 
-            // Text input
-            TextField("", text: $input, prompt: Text("Écris à DarkGPT…").foregroundColor(Theme.faint), axis: .vertical)
-                .focused(focused)
-                .lineLimit(1...8)
-                .font(.body)
-                .foregroundStyle(.white)
-                .padding(.horizontal, 4)
+            // Main input capsule
+            HStack(alignment: .bottom, spacing: 8) {
+                // Menu (+)
+                plusMenu
 
-            // Tools bottom bar
-            HStack(spacing: 8) {
-                actionMenu
+                // Text input
+                TextField("", text: $input, prompt: Text("Message…").foregroundColor(Theme.faint), axis: .vertical)
+                    .focused(focused)
+                    .lineLimit(1...6)
+                    .font(.system(size: 16))
+                    .foregroundStyle(.white)
+                    .padding(.vertical, 8)
 
-                toolChip("globe", "Web", $webSearch)
-
-                if showThinking {
-                    toolChip("sparkle", "Réflexion", $thinking)
+                // Trailing actions: Dictation mic or Send button
+                if hasContent || streaming {
+                    sendButton
+                        .transition(.scale.combined(with: .opacity))
+                } else {
+                    micButton
+                        .transition(.scale.combined(with: .opacity))
                 }
-
-                Spacer()
-
-                dictationButton
-
-                sendButton
             }
+            .padding(.horizontal, 10).padding(.vertical, 4)
+            .background(Color(red: 0.12, green: 0.12, blue: 0.13), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
+            .animation(.spring(response: 0.25, dampingFraction: 0.8), value: hasContent)
+            .animation(.spring(response: 0.25, dampingFraction: 0.8), value: streaming)
         }
-        .padding(12)
-        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(Theme.stroke, lineWidth: 1))
-        .shadow(color: .black.opacity(0.35), radius: 18, y: 6)
         .photosPicker(isPresented: $showPhotosPicker, selection: $pickerItem, matching: .images)
         .fileImporter(isPresented: $showFilePicker, allowedContentTypes: [.plainText, .sourceCode, .json, .pdf, .text]) { result in
             handleFileImport(result)
         }
     }
 
-    // MARK: - Attachments preview
-    private var attachmentsBar: some View {
-        HStack(spacing: 10) {
-            if let attachedImage, let ui = UIImage(data: attachedImage) {
-                ZStack(alignment: .topTrailing) {
-                    Image(uiImage: ui).resizable().scaledToFill()
-                        .frame(width: 56, height: 56)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    Button {
-                        self.attachedImage = nil
-                        pickerItem = nil
-                    } label: {
-                        Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(.white)
-                            .frame(width: 18, height: 18).background(.black.opacity(0.75), in: Circle())
+    // MARK: - Active pills row (attachments & toggles)
+    private var activePillsRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                if let attachedImage, let ui = UIImage(data: attachedImage) {
+                    ZStack(alignment: .topTrailing) {
+                        Image(uiImage: ui).resizable().scaledToFill()
+                            .frame(width: 48, height: 48)
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.white.opacity(0.15), lineWidth: 1))
+                        Button {
+                            self.attachedImage = nil
+                            pickerItem = nil
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 16, height: 16)
+                                .background(Color.black.opacity(0.8), in: Circle())
+                        }
+                        .offset(x: 4, y: -4)
                     }
-                    .offset(x: 5, y: -5)
                 }
-            }
 
-            if let doc = attachedDocument {
-                HStack(spacing: 6) {
-                    Image(systemName: "doc.text.fill")
-                        .foregroundStyle(Theme.accent2)
-                    Text(doc.name)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                    Button {
-                        attachedDocument = nil
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(Theme.faint)
+                if let doc = attachedDocument {
+                    HStack(spacing: 6) {
+                        Image(systemName: "doc.text.fill").font(.system(size: 11)).foregroundStyle(Theme.accent2)
+                        Text(doc.name).font(.system(size: 12, weight: .medium)).foregroundStyle(.white).lineLimit(1)
+                        Button {
+                            attachedDocument = nil
+                        } label: {
+                            Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).foregroundStyle(Theme.faint)
+                        }
                     }
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .background(Theme.surface2, in: Capsule())
+                    .overlay(Capsule().stroke(Color.white.opacity(0.1), lineWidth: 1))
                 }
-                .padding(.horizontal, 10).padding(.vertical, 6)
-                .background(Theme.surface2, in: Capsule())
-                .overlay(Capsule().stroke(Theme.stroke, lineWidth: 1))
+
+                if webSearch {
+                    togglePill(icon: "globe", label: "Web actif", onToggle: { webSearch = false })
+                }
+
+                if thinking {
+                    togglePill(icon: "sparkle", label: "Réflexion active", onToggle: { thinking = false })
+                }
             }
+            .padding(.horizontal, 4)
         }
-        .padding(.top, 2)
     }
 
-    // MARK: - Action Menu (+)
-    private var actionMenu: some View {
+    private func togglePill(icon: String, label: String, onToggle: @escaping () -> Void) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon).font(.system(size: 11, weight: .semibold))
+            Text(label).font(.system(size: 12, weight: .medium))
+            Button(action: onToggle) {
+                Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).foregroundStyle(Theme.faint)
+            }
+        }
+        .foregroundStyle(Theme.accent2)
+        .padding(.horizontal, 10).padding(.vertical, 5)
+        .background(Theme.accent.opacity(0.16), in: Capsule())
+        .overlay(Capsule().stroke(Theme.accent.opacity(0.4), lineWidth: 1))
+    }
+
+    // MARK: - Plus Menu
+    private var plusMenu: some View {
         Menu {
-            Button {
-                showPhotosPicker = true
-            } label: {
-                Label("Photo / Image", systemImage: "photo")
+            Section("Pièces jointes") {
+                Button {
+                    showPhotosPicker = true
+                } label: {
+                    Label("Ajouter une image", systemImage: "photo")
+                }
+
+                Button {
+                    showFilePicker = true
+                } label: {
+                    Label("Ajouter un document (Code, TXT)", systemImage: "doc.badge.plus")
+                }
             }
 
-            Button {
-                showFilePicker = true
-            } label: {
-                Label("Document ou Code (TXT, PY, Swift, JSON)", systemImage: "doc.badge.plus")
+            Section("Outils d'analyse") {
+                Button {
+                    Haptics.tap()
+                    webSearch.toggle()
+                } label: {
+                    Label(webSearch ? "Désactiver le Web" : "Recherche Web en direct", systemImage: "globe")
+                }
+
+                if showThinking {
+                    Button {
+                        Haptics.tap()
+                        thinking.toggle()
+                    } label: {
+                        Label(thinking ? "Désactiver la Réflexion" : "Réflexion approfondie (Reasoning)", systemImage: "sparkle")
+                    }
+                }
             }
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.85))
+                .foregroundStyle(Color.white.opacity(0.85))
                 .frame(width: 34, height: 34)
-                .background(Theme.surface2, in: Circle())
+                .background(Color.white.opacity(0.08), in: Circle())
         }
     }
 
-    // MARK: - Dictation Button
-    private var dictationButton: some View {
+    // MARK: - Microphone Button
+    private var micButton: some View {
         Button {
             Haptics.tap()
             speech.toggleDictation { text in
@@ -143,44 +184,26 @@ struct Composer: View {
             }
         } label: {
             Image(systemName: speech.isRecording ? "mic.fill" : "mic")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(speech.isRecording ? .white : Theme.muted)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(speech.isRecording ? .white : Color.white.opacity(0.75))
                 .frame(width: 34, height: 34)
-                .background(speech.isRecording ? Color.red : Theme.surface2, in: Circle())
+                .background(speech.isRecording ? Color.red : Color.white.opacity(0.06), in: Circle())
                 .scaleEffect(speech.isRecording ? 1.08 : 1.0)
                 .animation(.easeInOut(duration: 0.2), value: speech.isRecording)
         }
     }
 
-    // MARK: - Send Button
+    // MARK: - Send / Stop Button
     private var sendButton: some View {
         Button {
             Haptics.tap()
             streaming ? onStop() : onSend()
         } label: {
             Image(systemName: streaming ? "stop.fill" : "arrow.up")
-                .font(.system(size: 15, weight: .bold))
-                .foregroundStyle(canSend || streaming ? Color.black : Theme.faint)
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(streaming ? .white : .black)
                 .frame(width: 34, height: 34)
-                .background(canSend || streaming ? Color.white : Theme.surface2, in: Circle())
-        }
-        .disabled(!canSend && !streaming)
-        .animation(.easeOut(duration: 0.15), value: canSend)
-    }
-
-    private func toolChip(_ icon: String, _ label: String, _ on: Binding<Bool>) -> some View {
-        Button {
-            Haptics.tap()
-            on.wrappedValue.toggle()
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: icon).font(.system(size: 12, weight: .semibold))
-                Text(label).font(.footnote.weight(.medium))
-            }
-            .foregroundStyle(on.wrappedValue ? Theme.accent2 : .white.opacity(0.75))
-            .padding(.horizontal, 11).frame(height: 34)
-            .background(on.wrappedValue ? Theme.accent.opacity(0.16) : Theme.surface2, in: Capsule())
-            .overlay(Capsule().stroke(on.wrappedValue ? Theme.accent.opacity(0.45) : .clear, lineWidth: 1))
+                .background(streaming ? Color.white.opacity(0.2) : Color.white, in: Circle())
         }
     }
 
