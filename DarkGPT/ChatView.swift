@@ -12,29 +12,105 @@ struct ChatView: View {
     @State private var thinking = false
     @State private var pickerItem: PhotosPickerItem?
     @State private var attachedImage: Data?
+    @State private var attachedDocument: (name: String, content: String)?
     @State private var streamTask: Task<Void, Never>?
     @State private var errorBanner: String?
+    @State private var activeArtifact: Artifact?
+    @State private var showArtifactsSheet = false
+    @State private var showExportSheet = false
+    @State private var exportText: String = ""
     @FocusState private var inputFocused: Bool
 
     private var model: AIModel? { app.selectedModel() }
     private var isEmpty: Bool { conversation.messages.isEmpty }
+    private var project: Project? { app.project(for: conversation.projectId) }
+
+    private var conversationArtifacts: [Artifact] {
+        var list: [Artifact] = []
+        for m in conversation.messages where m.role == .assistant {
+            list.append(contentsOf: ArtifactExtractor.extract(from: m.content, messageId: m.id))
+        }
+        return list
+    }
 
     var body: some View {
         VStack(spacing: 0) {
+            if let project {
+                projectHeaderPill(project)
+            }
+
             if isEmpty { emptyState } else { messageList }
+
             if isEmpty { suggestions }
+
             Composer(input: $input, webSearch: $webSearch, thinking: $thinking,
                      attachedImage: $attachedImage, pickerItem: $pickerItem,
+                     attachedDocument: $attachedDocument,
                      streaming: streaming, showThinking: model?.hasThinkingToggle == true,
                      focused: $inputFocused, onSend: send, onStop: stopStreaming)
                 .padding(.horizontal, 12)
-            Text("DarkGPT peut se tromper. Vérifie les informations importantes.")
-                .font(.system(size: 10)).foregroundStyle(Theme.faint)
-                .padding(.top, 6).padding(.bottom, 4)
+
+            bottomDisclaimer
         }
         .background(Theme.bg.ignoresSafeArea())
         .overlay(alignment: .top) { if let errorBanner { banner(errorBanner) } }
         .onChange(of: pickerItem) { item in loadImage(item) }
+        .sheet(item: $activeArtifact) { art in
+            ArtifactStudioView(artifact: art)
+        }
+        .sheet(isPresented: $showArtifactsSheet) {
+            ConversationArtifactsSheet(artifacts: conversationArtifacts) { art in
+                showArtifactsSheet = false
+                activeArtifact = art
+            }
+        }
+        .sheet(isPresented: $showExportSheet) {
+            ShareSheet(activityItems: [exportText])
+        }
+    }
+
+    private var bottomDisclaimer: some View {
+        HStack(spacing: 12) {
+            Text("DarkGPT peut se tromper. Vérifie les informations importantes.")
+                .font(.system(size: 10)).foregroundStyle(Theme.faint)
+
+            if !conversationArtifacts.isEmpty {
+                Button {
+                    Haptics.tap()
+                    showArtifactsSheet = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "sparkles")
+                        Text("\(conversationArtifacts.count) artefact(s)")
+                    }
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.accent2)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Theme.accent.opacity(0.15), in: Capsule())
+                }
+            }
+        }
+        .padding(.top, 6).padding(.bottom, 4)
+    }
+
+    private func projectHeaderPill(_ proj: Project) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: proj.icon)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(proj.color)
+            Text("Projet : \(proj.name)")
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(Color.white.opacity(0.85))
+            Spacer()
+            if !proj.files.isEmpty {
+                Text("\(proj.files.count) ref(s)")
+                    .font(.system(size: 9))
+                    .foregroundStyle(Theme.faint)
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 6)
+        .background(proj.color.opacity(0.12))
+        .overlay(Rectangle().fill(proj.color.opacity(0.3)).frame(height: 1), alignment: .bottom)
     }
 
     private var greeting: String {
@@ -53,7 +129,7 @@ struct ChatView: View {
             Text(greeting)
                 .font(.system(size: 30, weight: .semibold, design: .serif))
                 .foregroundStyle(.white)
-            Text("Comment je peux t'aider ?")
+            Text(project != nil ? "Projet « \(project!.name) » actif" : "Comment je peux t'aider ?")
                 .font(.system(size: 17)).foregroundStyle(Theme.muted)
             Spacer()
         }
@@ -64,21 +140,24 @@ struct ChatView: View {
 
     private var suggestions: some View {
         let items: [Suggestion] = [
-            Suggestion(icon: "lightbulb", title: "Explique-moi", sub: "un concept simplement"),
-            Suggestion(icon: "chevron.left.forwardslash.chevron.right", title: "Aide-moi à coder", sub: "une fonction en Python"),
-            Suggestion(icon: "pencil.line", title: "Rédige", sub: "un message pro"),
-            Suggestion(icon: "chart.line.uptrend.xyaxis", title: "Analyse", sub: "une idée de business")
+            Suggestion(icon: "laptopcomputer", title: "Créer une app web", sub: "Calculatrice HTML/JS en Artefact"),
+            Suggestion(icon: "sparkles", title: "Générer un SVG", sub: "Logo moderne ou illustration vectorielle"),
+            Suggestion(icon: "chevron.left.forwardslash.chevron.right", title: "Coder un script", sub: "Une classe Swift ou Python"),
+            Suggestion(icon: "lightbulb", title: "Explique-moi", sub: "Un concept complexe simplement")
         ]
         return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
                 ForEach(items) { item in
-                    Button { input = item.title + " " + item.sub; inputFocused = true } label: {
+                    Button {
+                        input = item.title + " : " + item.sub
+                        inputFocused = true
+                    } label: {
                         VStack(alignment: .leading, spacing: 4) {
                             Image(systemName: item.icon).font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.accent2)
                             Text(item.title).font(.subheadline.weight(.semibold)).foregroundStyle(.white)
                             Text(item.sub).font(.caption).foregroundStyle(Theme.muted)
                         }
-                        .frame(width: 150, alignment: .leading)
+                        .frame(width: 155, alignment: .leading)
                         .padding(12)
                         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Theme.stroke, lineWidth: 1))
@@ -99,7 +178,14 @@ struct ChatView: View {
                         if streaming && isLast && msg.role == .assistant && msg.content.isEmpty {
                             TypingDots(label: statusText).id(msg.id)
                         } else {
-                            MessageBubble(message: msg, isStreaming: streaming && isLast).id(msg.id)
+                            MessageBubble(
+                                message: msg,
+                                isStreaming: streaming && isLast,
+                                onRegenerate: { regenerate() },
+                                onEdit: { text in input = text; inputFocused = true },
+                                onOpenArtifact: { art in activeArtifact = art }
+                            )
+                            .id(msg.id)
                         }
                     }
                     Color.clear.frame(height: 1).id("bottom")
@@ -131,7 +217,7 @@ struct ChatView: View {
     }
 }
 
-// MARK: - Send / stream
+// MARK: - Send / stream / regenerate
 extension ChatView {
     private func loadImage(_ item: PhotosPickerItem?) {
         guard let item else { return }
@@ -144,7 +230,7 @@ extension ChatView {
 
     private func send() {
         let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard (!text.isEmpty || attachedImage != nil), let model, !streaming else { return }
+        guard (!text.isEmpty || attachedImage != nil || attachedDocument != nil), let model, !streaming else { return }
 
         if !model.isUnlocked(for: app.plan) {
             showBanner("Ce modèle nécessite l'offre \(Plans.label(model.minPlan)).")
@@ -155,16 +241,30 @@ extension ChatView {
         let imageData = attachedImage
         if let data = imageData { image = (data.base64EncodedString(), "image/jpeg") }
 
-        let prompt = text.isEmpty ? "Analyse cette image." : text
-        conversation.messages.append(ChatMessage(role: .user, content: text, image: imageData))
+        var prompt = text.isEmpty ? "Analyse cette image." : text
+
+        // Injection du document joint si présent
+        if let doc = attachedDocument {
+            prompt = "[Fichier attaché : \(doc.name)] :\n\(doc.content)\n\n\(prompt)"
+        }
+
+        // Injection du contexte du projet si présent
+        if let proj = project {
+            let context = proj.systemContextPrompt
+            if !context.isEmpty {
+                prompt = "\(context)\n\n\(prompt)"
+            }
+        }
+
+        conversation.messages.append(ChatMessage(role: .user, content: text.isEmpty ? "Analyse le document/image joint" : text, image: imageData))
         if conversation.title == "Nouvelle conversation" {
-            conversation.title = String((text.isEmpty ? "Image" : text).prefix(48))
+            conversation.title = String((text.isEmpty ? "Document joint" : text).prefix(48))
         }
         conversation.model = model.slug
         conversation.updated = Date()
 
         let history = Array(conversation.messages.dropLast().suffix(30))
-        input = ""; attachedImage = nil; pickerItem = nil
+        input = ""; attachedImage = nil; pickerItem = nil; attachedDocument = nil
         inputFocused = false
 
         var assistant = ChatMessage(role: .assistant, content: "", model: model.slug)
@@ -214,6 +314,31 @@ extension ChatView {
         }
     }
 
+    private func regenerate() {
+        guard !streaming else { return }
+        // Supprimer la dernière réponse de l'assistant si présente
+        if let last = conversation.messages.last, last.role == .assistant {
+            conversation.messages.removeLast()
+        }
+        // Trouver le dernier message utilisateur
+        guard let lastUser = conversation.messages.last(where: { $0.role == .user }) else { return }
+        // Retirer le dernier message utilisateur pour le ré-envoyer proprement
+        conversation.messages.removeAll { $0.id == lastUser.id }
+        input = lastUser.content
+        attachedImage = lastUser.image
+        send()
+    }
+
+    func exportConversation() {
+        var output = "# \(conversation.title)\nModèle: \(conversation.model)\nDate: \(conversation.updated)\n\n"
+        for m in conversation.messages {
+            output += "### \(m.role == .user ? "Utilisateur" : "DarkGPT")\n"
+            output += m.content + "\n\n"
+        }
+        exportText = output
+        showExportSheet = true
+    }
+
     private func stopStreaming() {
         streamTask?.cancel()
         if let last = conversation.messages.last, last.role == .assistant, last.content.isEmpty {
@@ -251,6 +376,39 @@ extension ChatView {
     private func showBanner(_ text: String) {
         withAnimation { errorBanner = text }
         Task { try? await Task.sleep(nanoseconds: 4_000_000_000); withAnimation { errorBanner = nil } }
+    }
+}
+
+// MARK: - Conversation Artifacts Sheet
+struct ConversationArtifactsSheet: View {
+    let artifacts: [Artifact]
+    var onSelect: (Artifact) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    ForEach(artifacts) { art in
+                        ArtifactCardView(artifact: art) { a in
+                            onSelect(a)
+                        }
+                    }
+                }
+                .padding(16)
+            }
+            .background(Theme.bg.ignoresSafeArea())
+            .navigationTitle("Artefacts générés (\(artifacts.count))")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Theme.surface, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Fermer") { dismiss() }
+                        .foregroundStyle(Theme.muted)
+                }
+            }
+        }
     }
 }
 

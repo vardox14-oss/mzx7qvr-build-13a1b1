@@ -8,16 +8,36 @@ final class AppState: ObservableObject {
     @Published var user: UserProfile?
     @Published var models: [AIModel] = []
     @Published var conversations: [Conversation] = []
+    @Published var projects: [Project] = []
+    @Published var tasks: [ScheduledTask] = []
     @Published var selectedModelSlug: String = "gemini-2.5-flash"
     @Published var loadError: String?
 
     private let store = ConversationStore()
+    private let projectStore = ProjectStore()
+    private let automationStore = AutomationStore()
 
     var chatModels: [AIModel] { models.filter { $0.isChatModel } }
     var plan: String { user?.plan ?? "free" }
 
     func selectedModel() -> AIModel? {
         chatModels.first { $0.slug == selectedModelSlug } ?? chatModels.first
+    }
+
+    func project(for id: UUID?) -> Project? {
+        guard let id else { return nil }
+        return projects.first { $0.id == id }
+    }
+
+    var allArtifacts: [Artifact] {
+        var list: [Artifact] = []
+        for c in conversations {
+            for m in c.messages where m.role == .assistant {
+                let extracted = ArtifactExtractor.extract(from: m.content, messageId: m.id)
+                list.append(contentsOf: extracted)
+            }
+        }
+        return list
     }
 
     func bootstrap() async {
@@ -33,7 +53,13 @@ final class AppState: ObservableObject {
     func finishLogin(_ profile: UserProfile) async {
         user = profile
         store.use(account: profile.email)
+        projectStore.use(account: profile.email)
+        automationStore.use(account: profile.email)
+
         conversations = store.load()
+        projects = projectStore.load()
+        tasks = automationStore.load()
+
         await loadModels()
         phase = .loggedIn
     }
@@ -58,10 +84,12 @@ final class AppState: ObservableObject {
         await APIClient.shared.logout()
         user = nil
         conversations = []
+        projects = []
+        tasks = []
         phase = .loggedOut
     }
 
-    // MARK: Conversations
+    // MARK: - Conversations
 
     func persist() { store.save(conversations) }
 
@@ -85,6 +113,44 @@ final class AppState: ObservableObject {
         conversations[idx].pinned.toggle()
         conversations.sort { ($0.pinned ? 1 : 0, $0.updated) > ($1.pinned ? 1 : 0, $1.updated) }
         persist()
+    }
+
+    // MARK: - Projects
+
+    func persistProjects() { projectStore.save(projects) }
+
+    func upsertProject(_ project: Project) {
+        if let idx = projects.firstIndex(where: { $0.id == project.id }) {
+            projects[idx] = project
+        } else {
+            projects.insert(project, at: 0)
+        }
+        projects.sort { $0.updated > $1.updated }
+        persistProjects()
+    }
+
+    func deleteProject(_ project: Project) {
+        projects.removeAll { $0.id == project.id }
+        persistProjects()
+    }
+
+    // MARK: - Automations / Tasks
+
+    func persistTasks() { automationStore.save(tasks) }
+
+    func upsertTask(_ task: ScheduledTask) {
+        if let idx = tasks.firstIndex(where: { $0.id == task.id }) {
+            tasks[idx] = task
+        } else {
+            tasks.insert(task, at: 0)
+        }
+        persistTasks()
+    }
+
+    func deleteTask(_ task: ScheduledTask) {
+        NotificationManager.shared.cancelTask(task)
+        tasks.removeAll { $0.id == task.id }
+        persistTasks()
     }
 
     func setGems(_ gems: Double?) {

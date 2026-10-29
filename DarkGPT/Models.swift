@@ -120,6 +120,7 @@ struct Conversation: Identifiable, Codable, Equatable {
     var model: String
     var updated: Date
     var pinned: Bool = false
+    var projectId: UUID? = nil
     var messages: [ChatMessage] = []
 
     static func newID() -> String {

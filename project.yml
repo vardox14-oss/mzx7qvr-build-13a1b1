@@ -27,6 +27,8 @@ targets:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         NSPhotoLibraryUsageDescription: "DarkGPT accède à tes photos uniquement pour envoyer une image à l'IA."
+        NSMicrophoneUsageDescription: "DarkGPT utilise le micro pour la dictée vocale de tes messages."
+        NSSpeechRecognitionUsageDescription: "DarkGPT utilise la reconnaissance vocale pour transcrire tes messages."
         ITSAppUsesNonExemptEncryption: false
     settings:
       base:

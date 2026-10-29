@@ -1,11 +1,14 @@
 import SwiftUI
 
-/// Slide-in drawer: new chat, search, history grouped by date, account at the bottom.
+/// Slide-in drawer: new chat, quick power tools (Projets, Automations, Artefacts), search, history grouped by date, account.
 struct SidebarView: View {
     @EnvironmentObject var app: AppState
     let currentID: String
     var onNewChat: () -> Void
     var onOpen: (Conversation) -> Void
+    var onOpenProjects: () -> Void
+    var onOpenAutomations: () -> Void
+    var onOpenArtifacts: () -> Void
     var onAccount: () -> Void
     @State private var query = ""
 
@@ -32,6 +35,7 @@ struct SidebarView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+            powerToolsBar
             search
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
@@ -67,10 +71,52 @@ struct SidebarView: View {
         .padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 8)
     }
 
+    private var powerToolsBar: some View {
+        VStack(spacing: 4) {
+            powerToolRow(icon: "folder.fill", title: "Projets", count: app.projects.count, color: Theme.accent2) {
+                onOpenProjects()
+            }
+            powerToolRow(icon: "bolt.badge.clock.fill", title: "Tâches & Automations", count: app.tasks.filter { $0.isEnabled }.count, color: .orange) {
+                onOpenAutomations()
+            }
+            powerToolRow(icon: "sparkles", title: "Studio d'Artefacts", count: app.allArtifacts.count, color: .cyan) {
+                onOpenArtifacts()
+            }
+        }
+        .padding(.horizontal, 12).padding(.bottom, 8)
+    }
+
+    private func powerToolRow(icon: String, title: String, count: Int, color: Color, action: @escaping () -> Void) -> some View {
+        Button {
+            Haptics.tap()
+            action()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(color)
+                    .frame(width: 20)
+                Text(title)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.9))
+                Spacer()
+                if count > 0 {
+                    Text("\(count)")
+                        .font(.caption2.weight(.bold))
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Theme.surface2, in: Capsule())
+                        .foregroundStyle(Theme.muted)
+                }
+            }
+            .padding(.horizontal, 10).frame(height: 34)
+            .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+    }
+
     private var search: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass").font(.footnote).foregroundStyle(Theme.faint)
-            TextField("", text: $query, prompt: Text("Rechercher").foregroundColor(Theme.faint))
+            TextField("", text: $query, prompt: Text("Rechercher une discussion…").foregroundColor(Theme.faint))
                 .foregroundStyle(.white).font(.subheadline)
         }
         .padding(.horizontal, 12).frame(height: 38)
@@ -80,9 +126,17 @@ struct SidebarView: View {
 
     private func row(_ convo: Conversation) -> some View {
         let active = convo.id == currentID
+        let project = app.project(for: convo.projectId)
         return Button { onOpen(convo) } label: {
             HStack(spacing: 8) {
-                if convo.pinned { Image(systemName: "pin.fill").font(.system(size: 10)).foregroundStyle(Theme.accent2) }
+                if convo.pinned {
+                    Image(systemName: "pin.fill").font(.system(size: 10)).foregroundStyle(Theme.accent2)
+                }
+                if let project {
+                    Image(systemName: project.icon)
+                        .font(.system(size: 10))
+                        .foregroundStyle(project.color)
+                }
                 Text(convo.title).font(.subheadline).foregroundStyle(.white.opacity(active ? 1 : 0.85)).lineLimit(1)
                 Spacer(minLength: 0)
             }
