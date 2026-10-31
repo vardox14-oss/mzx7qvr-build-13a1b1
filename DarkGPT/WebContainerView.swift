@@ -6,6 +6,8 @@ struct WebContainerView: View {
     @State private var loadProgress: Double = 0.0
     @State private var loadError: String?
     @State private var reloadTrigger = UUID()
+    /// The launch splash only covers the very first page load, never later navigations.
+    @State private var hasLoadedOnce = false
 
     var body: some View {
         ZStack {
@@ -17,12 +19,13 @@ struct WebContainerView: View {
                 isLoading: $isLoading,
                 loadProgress: $loadProgress,
                 loadError: $loadError,
+                hasLoadedOnce: $hasLoadedOnce,
                 reloadTrigger: reloadTrigger
             )
             .ignoresSafeArea()
 
-            // Subtle top progress bar while navigating
-            if isLoading && loadProgress < 1.0 {
+            // Subtle top progress bar while navigating (after the first load)
+            if hasLoadedOnce && isLoading && loadProgress < 1.0 {
                 VStack {
                     GeometryReader { geo in
                         Rectangle()
@@ -41,8 +44,8 @@ struct WebContainerView: View {
                 offlineView(error: error)
             }
 
-            // Splash Screen during initial load
-            if isLoading && loadProgress < 0.65 {
+            // Splash only during the very first load of the app
+            if !hasLoadedOnce && loadError == nil {
                 SplashView()
                     .transition(.opacity)
             }
@@ -94,6 +97,7 @@ struct WebViewControllerRepresentable: UIViewControllerRepresentable {
     @Binding var isLoading: Bool
     @Binding var loadProgress: Double
     @Binding var loadError: String?
+    @Binding var hasLoadedOnce: Bool
     let reloadTrigger: UUID
 
     func makeUIViewController(context: Context) -> WebViewController {
@@ -125,6 +129,7 @@ struct WebViewControllerRepresentable: UIViewControllerRepresentable {
         func didChangeLoading(_ loading: Bool) {
             DispatchQueue.main.async {
                 self.parent.isLoading = loading
+                if !loading { self.parent.hasLoadedOnce = true }
             }
         }
 
@@ -296,6 +301,36 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
               button, a, .chip, .ibtn, .snav {
                 touch-action: manipulation !important;
               }
+
+              /* 7. APP ONLY = login + chat: hide everything that leads to the website */
+              .pane-foot { display: none !important; }
+              a.logo { pointer-events: none !important; }
+
+              /* 8. Desktop IDE promos make no sense on iPhone */
+              .ide-pill,
+              a[href="/ide-panel"], a[href="/remote"], a[href="/ide/download"],
+              .ide-drop-item { display: none !important; }
+
+              /* 9. LOGIN PAGE fitted to the iPhone screen */
+              .auth { min-height: 100dvh !important; }
+              .pane {
+                padding-top: max(var(--sat), 46px) !important;
+                padding-bottom: max(var(--sab), 24px) !important;
+                padding-left: max(var(--sal), 18px) !important;
+                padding-right: max(var(--sar), 18px) !important;
+                min-height: 100dvh !important;
+                box-sizing: border-box !important;
+              }
+              .pane .top {
+                min-height: 0 !important;
+                padding: 0 0 6px 0 !important;
+                background: transparent !important;
+                backdrop-filter: none !important;
+                -webkit-backdrop-filter: none !important;
+              }
+              .form-wrap { width: 100% !important; max-width: 440px !important; margin: 0 auto !important; }
+              .sbtn, .submit { min-height: 50px !important; border-radius: 14px !important; }
+              aside.show { display: none !important; }
             `;
           }
 
@@ -359,6 +394,34 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         loadInitialPage()
     }
 
+    // MARK: - App scope: only the login page and the chat live inside the app
+    private enum AppRoute { case inApp, chat, safari }
+
+    private static let chatURL = URL(string: "https://darkgpt.chat/chat")!
+
+    private func isSiteHost(_ host: String) -> Bool {
+        host == "darkgpt.chat" || host == "www.darkgpt.chat"
+    }
+
+    /// darkgpt.chat pages: login/chat (+ auth, API, assets) stay in the app, the landing page goes
+    /// back to the chat, every other page of the website opens in Safari.
+    private func route(for url: URL) -> AppRoute {
+        let path = url.path.lowercased()
+        let pages = ["/chat", "/login", "/reset-password", "/banned", "/maintenance"]
+        if pages.contains(where: { path == $0 || path == $0 + ".html" || path.hasPrefix($0 + "/") }) { return .inApp }
+        let prefixes = ["/api/", "/auth/", "/mobile/", "/assets/", "/share/", "/cdn-cgi/"]
+        if prefixes.contains(where: { path.hasPrefix($0) }) { return .inApp }
+        if path.isEmpty || path == "/" || path == "/index" || path == "/index.html" {
+            // "/#tarifs" and friends are website sections, the bare landing page is replaced by the chat
+            return (url.fragment ?? "").isEmpty ? .chat : .safari
+        }
+        return .safari
+    }
+
+    private func openInSafari(_ url: URL) {
+        UIApplication.shared.open(url)
+    }
+
     // MARK: - Internal OAuth & Site Domain Whitelist
     private func isAllowedInternalDomain(_ host: String) -> Bool {
         let allowedDomains = [
@@ -417,8 +480,30 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
             return
         }
 
-        // Allow internal app pages, Turnstile challenges, and OAuth login providers
         let host = url.host?.lowercased() ?? ""
+
+        // Sub-frames (Turnstile, embeds) are never re-routed
+        if navigationAction.targetFrame?.isMainFrame == false {
+            decisionHandler(.allow)
+            return
+        }
+
+        // Our own website: only login + chat stay in the app
+        if isSiteHost(host) {
+            switch route(for: url) {
+            case .inApp:
+                decisionHandler(.allow)
+            case .chat:
+                decisionHandler(.cancel)
+                webView.load(URLRequest(url: Self.chatURL))
+            case .safari:
+                decisionHandler(.cancel)
+                openInSafari(url)
+            }
+            return
+        }
+
+        // OAuth providers (Google, Discord, Apple) and Cloudflare challenges stay in-app
         if host.isEmpty || isAllowedInternalDomain(host) {
             decisionHandler(.allow)
             return
@@ -433,10 +518,16 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         if let url = navigationAction.request.url, !url.absoluteString.isEmpty {
             let host = url.host?.lowercased() ?? ""
-            if host.isEmpty || isAllowedInternalDomain(host) {
+            if isSiteHost(host) {
+                switch route(for: url) {
+                case .inApp: webView.load(navigationAction.request)
+                case .chat: webView.load(URLRequest(url: Self.chatURL))
+                case .safari: openInSafari(url)
+                }
+            } else if host.isEmpty || isAllowedInternalDomain(host) {
                 webView.load(navigationAction.request)
             } else {
-                UIApplication.shared.open(url)
+                openInSafari(url)
             }
         }
         return nil
